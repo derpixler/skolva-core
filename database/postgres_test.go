@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/derpixler/skolva-core/database"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/derpixler/skolva-core/database"
 )
 
 func setupTestDB(t *testing.T) (*database.Pools, func()) {
