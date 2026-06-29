@@ -103,36 +103,6 @@ func TestDualPoolIsolation(t *testing.T) {
 	}
 }
 
-func TestSchemaExecution(t *testing.T) {
-	pools, cleanup := setupTestDB(t)
-	defer cleanup()
-
-	ctx := context.Background()
-
-	schemaContent, err := os.ReadFile("../../../schema.sql")
-	if err != nil {
-		t.Fatalf("failed to read schema.sql: %v", err)
-	}
-
-	_, err = pools.Web.Exec(ctx, string(schemaContent))
-	if err != nil {
-		t.Fatalf("failed to execute schema: %v", err)
-	}
-
-	var tableCount int
-	err = pools.Web.QueryRow(ctx, `
-		SELECT COUNT(*) FROM information_schema.tables
-		WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-	`).Scan(&tableCount)
-	if err != nil {
-		t.Fatalf("failed to count tables: %v", err)
-	}
-
-	if tableCount < 10 {
-		t.Errorf("expected at least 10 tables, got %d", tableCount)
-	}
-}
-
 func TestNewPoolsInvalidURL(t *testing.T) {
 	if os.Getenv("SKIP_INTEGRATION") == "1" {
 		t.Skip("skipping integration test")

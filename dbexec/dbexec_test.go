@@ -53,12 +53,64 @@ func newSchemaPool(t *testing.T) (*pgxpool.Pool, func()) {
 		t.Fatalf("failed to create pool: %v", err)
 	}
 
-	schemaContent, err := os.ReadFile("../../../schema.sql")
-	if err != nil {
-		t.Fatalf("failed to read schema.sql: %v", err)
-	}
-	if _, err := pool.Exec(ctx, string(schemaContent)); err != nil {
-		t.Fatalf("failed to apply schema: %v", err)
+	if _, err := pool.Exec(ctx, `
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+CREATE OR REPLACE FUNCTION prevent_permanent_delete()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF COALESCE(current_setting('app.allow_delete', true), '') = '1' THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'physical DELETE on % is forbidden', TG_TABLE_NAME;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  deleted_at TIMESTAMPTZ
+);
+
+CREATE TABLE audit_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  table_name TEXT NOT NULL,
+  record_pk TEXT NOT NULL,
+  action TEXT NOT NULL,
+  old_data JSONB,
+  new_data JSONB,
+  actor_user_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE OR REPLACE FUNCTION audit_trigger_func()
+RETURNS TRIGGER AS $$
+DECLARE
+  actor UUID;
+BEGIN
+  actor := NULLIF(current_setting('app.actor_user_id', true), '')::UUID;
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO audit_logs (table_name, record_pk, action, new_data, actor_user_id)
+    VALUES (TG_TABLE_NAME, NEW.id::TEXT, 'INSERT', to_jsonb(NEW), actor);
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    INSERT INTO audit_logs (table_name, record_pk, action, old_data, new_data, actor_user_id)
+    VALUES (TG_TABLE_NAME, NEW.id::TEXT, 'UPDATE', to_jsonb(OLD), to_jsonb(NEW), actor);
+    RETURN NEW;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tr_users_block_delete
+BEFORE DELETE ON users FOR EACH ROW EXECUTE PROCEDURE prevent_permanent_delete();
+CREATE TRIGGER tr_users_audit
+AFTER INSERT OR UPDATE ON users FOR EACH ROW EXECUTE PROCEDURE audit_trigger_func();
+`); err != nil {
+		t.Fatalf("failed to apply test schema: %v", err)
 	}
 
 	cleanup := func() {

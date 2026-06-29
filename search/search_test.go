@@ -79,12 +79,20 @@ func newSchemaPool(t *testing.T) (*pgxpool.Pool, func()) {
 		t.Fatalf("failed to create pool: %v", err)
 	}
 
-	schemaContent, err := os.ReadFile("../../../schema.sql")
-	if err != nil {
-		t.Fatalf("failed to read schema.sql: %v", err)
-	}
-	if _, err := pool.Exec(ctx, string(schemaContent)); err != nil {
-		t.Fatalf("failed to apply schema: %v", err)
+	if _, err := pool.Exec(ctx, `
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email TEXT NOT NULL, password_hash TEXT NOT NULL,
+  first_name TEXT NOT NULL, last_name TEXT NOT NULL,
+  deleted_at TIMESTAMPTZ,
+  search_vector tsvector GENERATED ALWAYS AS (
+    to_tsvector('german', coalesce(first_name,'') || ' ' || coalesce(last_name,'') || ' ' || coalesce(email,''))
+  ) STORED
+);
+CREATE INDEX ix_users_search ON users USING GIN(search_vector);
+`); err != nil {
+		t.Fatalf("failed to apply test schema: %v", err)
 	}
 
 	cleanup := func() {

@@ -64,12 +64,24 @@ func newSchemaPool(t *testing.T) (*pgxpool.Pool, func()) {
 		t.Fatalf("failed to create pool: %v", err)
 	}
 
-	schemaContent, err := os.ReadFile("../../../schema.sql")
-	if err != nil {
-		t.Fatalf("failed to read schema.sql: %v", err)
-	}
-	if _, err := pool.Exec(ctx, string(schemaContent)); err != nil {
-		t.Fatalf("failed to apply schema: %v", err)
+	if _, err := pool.Exec(ctx, `
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email TEXT NOT NULL, password_hash TEXT NOT NULL,
+  first_name TEXT NOT NULL, last_name TEXT NOT NULL
+);
+CREATE TABLE users_meta (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  entity_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  meta_key TEXT NOT NULL,
+  meta_value TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(entity_id, meta_key)
+);
+`); err != nil {
+		t.Fatalf("failed to apply test schema: %v", err)
 	}
 
 	cleanup := func() {

@@ -47,16 +47,8 @@ func TestNewWorker(t *testing.T) {
 	}
 	defer pools.Close()
 
-	schemaContent, err := os.ReadFile("../../../schema.sql")
-	if err != nil {
-		t.Fatalf("failed to read schema.sql: %v", err)
-	}
-
-	_, err = pools.Web.Exec(ctx, string(schemaContent))
-	if err != nil {
-		t.Fatalf("failed to execute schema: %v", err)
-	}
-
+	// River manages its own schema (river_* tables); no application schema is
+	// needed to construct and start/stop the worker.
 	worker, err := jobs.NewWorker(ctx, pools.Worker)
 	if err != nil {
 		t.Fatalf("failed to create worker: %v", err)
